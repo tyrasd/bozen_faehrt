@@ -1,0 +1,129 @@
+<html>
+  <head>
+    <link rel="stylesheet" href="http://cdn.leafletjs.com/leaflet-0.5/leaflet.css" />
+    <title>Bozen f&auml;hrt?</title>
+  </head>
+  <body>
+    <script src="stops.json"></script>
+    <script src="lines.json"></script>
+    <script src="linee.json"></script>
+    <script src="times_.json"></script>
+    <script src="parts.json"></script>
+    <script src="sasa_routes.geojson"></script>
+    <script src="http://cdn.leafletjs.com/leaflet-0.5/leaflet.js"></script>
+    <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+    <!--<script src="KML.js"></script>-->
+
+    <div id="map" style="position:absolute; top:0;left:0;bottom:0;right:0;"></div>
+
+    <script>
+      var map = L.map('map').setView([46.49556, 11.35137], 14);
+      //L.tileLayer('http://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      L.tileLayer('http://{s}.tile2.opencyclemap.org/transport/{z}/{x}/{y}.png', {
+        attribution: 'Map &copy; <a href="http://openstreetmap.org/copyright">OpenStreetMap</a> contributors, Tiles courtesy of <a href="http://www.opencyclemap.org/">Andy Allan</a>, Bus-Data &copy; SASA, CC-BY-NC-SA',
+        maxZoom: 18
+      }).addTo(map);
+      /*var klm = new L.KML();
+      klm.addKML("http://localhost/~tyr/sasa_ge_routesdata.kml");
+      klm.iaddTo(map);*/
+
+      var line_colors = {};
+      linee.forEach(function(line) {
+        line_colors[line.Abbreviazione] = line.Farbcodex;
+      });
+      var parts_ = {};
+      parts.forEach(function(part) {
+        part.parts = part.Teilstuecke.split(", ");
+        part.parts.forEach(function(pp){
+          parts_[pp] = {color: line_colors[part.Abbreviazione], line:part.Abbreviazione, lineid:part.ID};
+        });
+      });
+
+      L.geoJson(routes, {
+        style: function(feature) {
+          return {
+            /*color: line_colors[feature.properties.Name] 
+                || line_colors[feature.properties.Name.replace(/ \/ .*$/,"")] 
+                || "black",*/
+            color: parts_[feature.properties.Name] ? parts_[feature.properties.Name].color : "black",
+            opacity: 0.9
+          }
+        },
+        onEachFeature: function(feature, layer) {
+          layer.bindPopup(JSON.stringify(feature.properties));
+        },
+        pointToLayer: function(feature) {
+          return L.circleMarker([0,0]);
+        },
+      }).addTo(map);
+
+      
+      var stops_loc = {};
+      stops.forEach(function(stop) {
+        var marker = L.circle([stop.Latitude, stop.Longitude],5).addTo(map).bindPopup(JSON.stringify(stop));
+        stops_loc[stop.Stop] = [stop.Latitude, stop.Longitude];
+      });
+      var courses = [];
+      lines.forEach(function(line) {
+        var day_pos = Math.floor((new Date() - new Date(line.start_date))/(1000*60*60*24));
+        if (line.days_on[day_pos] == "1") {
+          courses.push(line.Course); 
+        }
+      });
+      var busses = {};
+      for (var i=0; i<times_.Course.length; i++) {
+        if ($.inArray(times_.Course[i], courses) != -1) {
+          if (!busses[times_.Course[i]])
+            busses[times_.Course[i]] = new Array();
+          busses[times_.Course[i]][times_.order[i]] = {
+            stop: times_.Stop[i],
+            time: times_.Time[i]
+          };
+        }
+      }
+      var markers = {};
+    var update_positions = function(t) {
+      if (!t) t = new Date;
+      var h = t.getHours();
+      var m = t.getMinutes();
+      var s = t.getSeconds();
+      var now = t.toTimeString().substr(0,8);
+      for (var course in busses) {
+        var bus = busses[course];
+        var running;
+        if (now < bus[1].time) // not startet yet
+          continue;
+        if (now > bus[bus.length-1].time) // already finished
+          continue;
+        // find pos in list
+        var pos;
+        for (var i=1; i<=bus.length-1; i++) {
+          if (now >= bus[i].time)
+            pos = i;
+        }
+        var loc = stops_loc[bus[pos].stop]; // todo: interpolate
+        var route_loc = loc;
+        //loc[0] = (loc[0]*(60-s)/60+next_loc[0]*s/60);
+        //loc[1] = (loc[1]*(60-s)/60+next_loc[1]*s/60);
+        if (!markers[course]) {
+          markers[course] = L.marker(route_loc).addTo(map);
+          markers[course].bindPopup("Course: "+course+"<br>Line: "+lines[course-1].Line+"<br>Variant: "+lines[course-1].Variant);
+        } else
+          markers[course].setLatLng(route_loc);
+      }
+    };
+      var t = new Date();
+      t.setHours(0);
+      t.setMinutes(0);
+      t.setSeconds(1);
+    var animate = function() {
+      update_positions(t);
+      setTimeout(animate,100);
+      t = new Date(+t+60*1000);
+    }
+      //setInterval(update_positions,10000);
+      setTimeout(animate,10);
+    </script>
+
+  </body>
+</html>
